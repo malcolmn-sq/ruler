@@ -25,9 +25,21 @@ import com.spotify.ruler.models.FileContainer
 import com.spotify.ruler.models.Measurable
 import kotlinx.html.id
 import kotlinx.js.jso
+import kotlinx.html.js.onClickFunction
+import kotlinx.html.js.onChangeFunction
+import org.w3c.dom.HTMLSelectElement
 import react.RBuilder
+import react.useState
+import react.useMemo
+import react.StateSetter
 import react.dom.button
 import react.dom.div
+import react.dom.nav
+import react.dom.ul
+import react.dom.li
+import react.dom.option
+import react.dom.select
+import react.dom.strong
 import react.dom.h2
 import react.dom.h4
 import react.dom.span
@@ -35,11 +47,13 @@ import react.table.columns
 import react.table.useTable
 import react.table.RenderType
 import react.table.usePagination
+import react.table.useExpanded
 import react.table.TableInstance
+import react.table.Row
 import react.table.Cell
 import react.table.TableCell
 
-private val COMPONENTS_COLUMNS = columns<AppComponent> {
+private val FILE_CONTAINER_COLUMNS = columns<FileContainer> {
     column<String> {
         accessorFunction = { it.name }
         id = "name"
@@ -61,123 +75,154 @@ private val COMPONENTS_COLUMNS = columns<AppComponent> {
     }
 }
 
-private val FILE_LIST_COLUMNS = columns<AppFile> {
-    column<String> {
-        accessorFunction = { it.name }
-        id = "name"
-    }
-
-    column<Long> {
-        accessorFunction = { it.downloadSize }
-        id = "downloadSize"
-    }
-
-    column<Long> {
-        accessorFunction = { it.installSize }
-        id = "installSize"
-    }
-}
-
 @RFunction
 fun RBuilder.breakdown(components: List<AppComponent>, sizeType: Measurable.SizeType) {
     h4(classes = "mb-3") { +"Breakdown (${components.size} components)" }
-
-    val table = useTable<AppComponent>(
-        options = jso {
-            data = components.toTypedArray()
-            columns = COMPONENTS_COLUMNS
-            // initialState = jso {
-            //     pageSize = 10
-            // }
-        }
-    );
-
-    table.getTableProps()
-    table.getTableBodyProps()
-
     div(classes = "row") {
-        containerList(table as TableInstance<FileContainer>, sizeType)
+        containerList(components, sizeType)
     }
 }
 
+@RFunction
+fun RBuilder.containerList(containers: List<FileContainer>, sizeType: Measurable.SizeType) {
+    val memoData = useMemo { containers.toTypedArray() }
+    val memoColumns = useMemo { FILE_CONTAINER_COLUMNS }
+
+    val table = useTable<FileContainer>(
+        options = jso {
+            data = memoData
+            columns = memoColumns
+            initialState = jso {
+                pageSize = 15
+            }
+        },
+        usePagination
+    );
+
+    div(classes = "accordion") {
+        table.getTableProps()
+        table.getTableBodyProps()
+        table.page.mapIndexed { index, row ->
+            table.prepareRow(row)
+            containerListItem(index, row, sizeType, row.original.name)
+        }
+    }
+
+    if (!table.page.isEmpty()) {
+        div (classes = "row") {
+            containerPagination(table)
+        }
+    }
+}
 
 @RFunction
-fun RBuilder.containerList(table: TableInstance<FileContainer>, sizeType: Measurable.SizeType) {
-    div(classes = "accordion") {
-        table.rows.mapIndexed { index, row ->
-            table.prepareRow(row)
-            row.getRowProps()
+@Suppress("UNUSED_PARAMETER")
+fun RBuilder.containerPagination(table: TableInstance<FileContainer>) {
+    val totalPages = table.pageCount
+    val activePage = table.state.pageIndex
+    val pageSize = table.state.pageSize
+    val canPreviousPage = table.canPreviousPage
+    val canNextPage = table.canNextPage
 
-            div(classes = "accordion-item") {
-                h2(classes = "accordion-header") {
-                    var classes = "accordion-button collapsed"
+    val pageSizeOptions = listOf<Int>(10, 20, 30, 40, 50, 100, 200)
+    val pageItemClass = "page-item"
 
-                    val nameCell: TableCell<FileContainer, *>? = row.cells.find {
-                        it.getCellProps()
-                        it.column.id == "name"
+    div(classes="col") {
+        nav {
+        ul(classes = "pagination justify-content-center") {
+                val previousButtonClasses = if (canPreviousPage) pageItemClass else "$pageItemClass disabled"
+                val nextButtonClasses = if (canNextPage) pageItemClass else "$pageItemClass disabled"
+            li(classes = previousButtonClasses) {
+                button(classes = "page-link") {
+                    attrs.onClickFunction = {
+                        table.gotoPage(0)
                     }
-                    val ownerCell: TableCell<FileContainer, *>? = row.cells.find {
-                        it.getCellProps()
-                        it.column.id == "owner"
+                    +"<<"
+                }
+                }
+
+                li(classes = previousButtonClasses) {
+                button(classes = "page-link") {
+                    attrs.onClickFunction = {
+                        table.previousPage()
                     }
+                    +"<"
+                }
+                }
 
-                    div(classes = classes) {
-                        attrs["data-bs-toggle"] = "collapse"
-                        attrs["data-bs-target"] = "#module-$index-body"
+                li(classes = nextButtonClasses) {
+                button(classes = "page-link") {
+                    attrs.onClickFunction = {
+                        table.nextPage()
+                    }
+                    +">"
+                }
+                }
 
-                        span(classes = "font-monospace text-truncate me-3") { nameCell?.render(RenderType.Cell)?.unaryPlus() }
-                        span(classes = "badge bg-secondary me-3") { ownerCell?.render(RenderType.Cell)?.unaryPlus() }
+                li(classes = nextButtonClasses) {
+                button(classes = "page-link") {
+                    attrs.onClickFunction = {
+                        table.gotoPage(totalPages - 1)
+                    }
+                    +">>"
+                }
+                }
 
-                        var sizeClasses = "ms-auto text-nowrap"
-                        span(classes = sizeClasses) {
-                            +formatSize(row.original, sizeType)
+                li(classes = "page-item") {
+                    span(classes = "page-link") {
+                        +"Page "
+                        strong {
+                            +"${activePage + 1} of ${totalPages}"
                         }
                     }
+                }
+        }
+        }
+    }
+
+    div(classes = "col") {
+        select(classes = "form-select") {
+            attrs.value = "$pageSize"
+            attrs.onChangeFunction = { event ->
+                table.setPageSize((event.target as HTMLSelectElement).value.toInt())
+            }
+
+            pageSizeOptions.forEach { pageSize ->
+                option {
+                    attrs.value = "$pageSize"
+                    +"Show $pageSize"
                 }
             }
         }
     }
 }
 
-// @RFunction
-// fun RBuilder.containerList(table: TableInstance<FileContainer>, sizeType: Measurable.SizeType) {
-//     div(classes = "accordion") {
-//         table.rows.mapIndexed { index, row ->
-//             table.prepareRow(row)
-//             row.getRowProps()
-//             containerListItem(index, row.original, sizeType, row.original.name)
-//         }
-//     }
-// }
-
-//
-// @RFunction
-// fun RBuilder.containerList(containers: List<FileContainer>, sizeType: Measurable.SizeType) {
-//     div(classes = "accordion") {
-//         containers.forEachIndexed { index, container ->
-//             containerListItem(index, container, sizeType, container.name)
-//         }
-//     }
-// }
-
 @RFunction
 @Suppress("UNUSED_PARAMETER")
-fun RBuilder.containerListItem(id: Int, container: FileContainer, sizeType: Measurable.SizeType, @RKey key: String) {
+fun RBuilder.containerListItem(id: Int, row: Row<FileContainer>, sizeType: Measurable.SizeType, @RKey key: String) {
+    val (expanded, setExpanded) = useState(false)
+
     div(classes = "accordion-item") {
-        containerListItemHeader(id, container, sizeType)
-        //containerListItemBody(id, container, sizeType)
+        row.getRowProps()
+        containerListItemHeader(id, row.original, sizeType, expanded, setExpanded)
+        containerListItemBody(id, row.original, sizeType, expanded)
     }
 }
 
 @RFunction
-fun RBuilder.containerListItemHeader(id: Int, container: FileContainer, sizeType: Measurable.SizeType) {
+fun RBuilder.containerListItemHeader(id: Int, container: FileContainer, sizeType: Measurable.SizeType, expanded: Boolean, setExpanded: StateSetter<Boolean>) {
     val containsFiles = container.files != null
     h2(classes = "accordion-header") {
         var classes = "accordion-button collapsed"
         if (!containsFiles) {
             classes = "$classes disabled"
         }
+
         button(classes = classes) {
+            attrs.onClickFunction = {
+                setExpanded(!expanded)
+            }
+
             attrs["data-bs-toggle"] = "collapse"
             attrs["data-bs-target"] = "#module-$id-body"
             span(classes = "font-monospace text-truncate me-3") { +container.name }
@@ -194,62 +239,22 @@ fun RBuilder.containerListItemHeader(id: Int, container: FileContainer, sizeType
 }
 
 @RFunction
-fun RBuilder.containerListItemBody(id: Int, container: FileContainer, sizeType: Measurable.SizeType) {
+fun RBuilder.containerListItemBody(id: Int, container: FileContainer, sizeType: Measurable.SizeType, expanded: Boolean) {
     div(classes = "accordion-collapse collapse") {
         attrs.id = "module-$id-body"
         div(classes = "accordion-body p-0") {
-            fileList(container.files ?: emptyList(), sizeType)
+            if (expanded) {
+                fileList(container.files ?: emptyList(), sizeType)
+            }
         }
     }
 }
 
 @RFunction
 fun RBuilder.fileList(files: List<AppFile>, sizeType: Measurable.SizeType) {
-    val table = useTable<AppFile>(
-        options = jso {
-            data = files.toTypedArray()
-            columns = FILE_LIST_COLUMNS
-            initialState = jso {
-                pageSize = 10000
-            }
-        },
-        usePagination
-    );
-
-    table.getTableProps()
-    table.getTableBodyProps()
-
     div(classes = "list-group list-group-flush") {
-        table.page.mapIndexed { index, row ->
-            //if (index <= 10) {
-                table.prepareRow(row)
-                row.getRowProps()
-
-                //fileListItem(row, sizeType)
-
-                val nameCell: TableCell<AppFile, *>? = row.cells!!.find {
-                    it.getCellProps()
-                    it.column.id == "name"
-                }
-                val sizeCell: TableCell<AppFile, *>? = row.cells!!.find {
-                    it.getCellProps()
-                    it.column.id == "downloadSize"
-                }
-
-                div(classes = "list-group-item d-flex border-0") {
-                    span(classes = "font-monospace text-truncate me-2") { +nameCell!!.render(RenderType.Cell) }
-                    span(classes = "ms-auto me-custom text-nowrap") {
-                        //+formatSize(file, sizeType)
-                        +sizeCell!!.render(RenderType.Cell)
-                    }
-                }
-            // row.cells.map{ cell ->
-            //         span(classes = "font-monospace text-truncate me-2") {
-            //             cell.getCellProps()
-            //             +cell!!.render(RenderType.Cell)
-            //         }
-            // }
-            //}
+        files.forEach { file ->
+            fileListItem(file, sizeType, file.name)
         }
     }
 }
@@ -264,14 +269,3 @@ fun RBuilder.fileListItem(file: AppFile, sizeType: Measurable.SizeType, @RKey ke
         }
     }
 }
-
-// @RFunction
-// @Suppress("UNUSED_PARAMETER")
-// fun RBuilder.fileListItem(file: AppFile, sizeType: Measurable.SizeType, @RKey key: String) {
-//     div(classes = "list-group-item d-flex border-0") {
-//         span(classes = "font-monospace text-truncate me-2") { +file.name }
-//         span(classes = "ms-auto me-custom text-nowrap") {
-//             +formatSize(file, sizeType)
-//         }
-//     }
-// }
