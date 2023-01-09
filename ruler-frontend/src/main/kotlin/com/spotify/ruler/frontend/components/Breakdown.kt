@@ -85,7 +85,7 @@ fun RBuilder.breakdown(components: List<AppComponent>, sizeType: Measurable.Size
 
 @RFunction
 fun RBuilder.containerList(containers: List<FileContainer>, sizeType: Measurable.SizeType) {
-    val memoData = useMemo { containers.toTypedArray() }
+    val memoData = useMemo(containers) { containers.toTypedArray() }
     val memoColumns = useMemo { FILE_CONTAINER_COLUMNS }
 
     val table = useTable<FileContainer>(
@@ -109,7 +109,7 @@ fun RBuilder.containerList(containers: List<FileContainer>, sizeType: Measurable
     }
 
     if (!table.page.isEmpty()) {
-        div (classes = "row") {
+        div (classes = "row pt-4") {
             containerPagination(table)
         }
     }
