@@ -133,6 +133,7 @@ fun RBuilder.componentOwnershipPerTeam(
         highlightedValue(downloadSize, "Download size", ::formatSize)
         highlightedValue(installSize, "Install size", ::formatSize)
     }
+
     containerList(processedComponents, sizeType)
 }
 

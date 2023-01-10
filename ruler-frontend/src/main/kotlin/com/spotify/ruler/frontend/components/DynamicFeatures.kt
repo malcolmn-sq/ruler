@@ -26,6 +26,7 @@ import react.dom.h4
 @RFunction
 fun RBuilder.dynamicFeatures(features: List<DynamicFeature>, sizeType: Measurable.SizeType) {
     h4(classes = "mb-3") { +"Dynamic features" }
+
     div(classes = "row") {
         containerList(features, sizeType)
     }
